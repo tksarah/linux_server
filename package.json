@@ -1,0 +1,11 @@
+{
+  "name": "linux-systemd-apache-lab",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check": "node --check js/scenarios.js && node --check js/engine.js && node --check js/app.js && node --check scripts/serve.mjs",
+    "test": "node --test tests/*.test.js",
+    "start": "node scripts/serve.mjs 4173"
+  }
+}
