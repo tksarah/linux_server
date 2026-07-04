@@ -38,7 +38,7 @@ test("systemctl exercise verifies httpd with curl and the virtual browser", () =
   assert.match(curl.output, /Apache HTTP Server Test Page/);
   assert.equal(browser.ok, true);
   assert.equal(browser.status, "200 OK");
-  assert.equal(browser.title, "Apache HTTP Server Welcome Page");
+  assert.equal(browser.title, "Apache HTTP Server テストページ");
   assert.equal(browser.serviceState, "active");
   assert.equal(evaluateCheck(state, { type: "portListening", port: 80, service: "httpd" }), true);
 

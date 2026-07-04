@@ -477,7 +477,7 @@ button {
   place-items: stretch;
   min-height: 220px;
   margin-top: 10px;
-  overflow: hidden;
+  overflow: auto;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #f2f4f7;
@@ -486,79 +486,129 @@ button {
 .browser-page,
 .browser-message {
   min-height: 220px;
-  padding: 22px;
 }
 
 .browser-page {
   background: #ffffff;
 }
 
-.apache-hero {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 18px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 16px;
+.apache-test-page {
+  padding: 0;
+  color: #262626;
+  font-family: Arial, "Yu Gothic UI", "Meiryo", system-ui, sans-serif;
 }
 
-.apache-mark {
+.apache-test-header {
+  background: #a60000;
+  color: #ffffff;
+  padding: 12px 18px;
+  text-align: center;
+}
+
+.apache-test-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+}
+
+.apache-test-content {
+  padding: 16px 22px 18px;
+}
+
+.apache-test-intro {
+  margin: 0 0 18px;
+  color: #333333;
+  font-size: 0.82rem;
+  line-height: 1.65;
+}
+
+.apache-test-columns {
   display: grid;
-  width: 76px;
-  height: 76px;
-  place-items: center;
-  border-radius: 50%;
-  background: var(--amber-soft);
-  color: var(--amber);
-  font-weight: 900;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 24px 28px;
 }
 
-.apache-kicker {
-  margin: 0 0 5px;
-  color: var(--green);
-  font-size: 0.78rem;
-  font-weight: 800;
+.apache-test-section h5 {
+  margin: 0 0 10px;
+  color: #222222;
+  font-size: 0.86rem;
 }
 
-.browser-page h4 {
-  margin: 0 0 12px;
-  font-size: 1.55rem;
+.apache-test-section p {
+  margin: 0 0 11px;
+  color: #343434;
+  font-size: 0.8rem;
+  line-height: 1.58;
 }
 
-.browser-page p,
-.browser-message p {
-  color: var(--muted);
-  line-height: 1.6;
-}
-
-.apache-success {
-  margin: 0 0 16px;
-  color: var(--ink);
-  font-weight: 700;
-}
-
-.apache-facts {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.apache-facts div {
-  display: grid;
-  gap: 4px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #f8faf8;
-  padding: 9px 10px;
-}
-
-.apache-facts span {
-  color: var(--muted);
+.apache-test-section code {
+  border-radius: 4px;
+  background: #f0f0f0;
+  padding: 1px 4px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.76rem;
+}
+
+.apache-powered {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  gap: 7px;
+  margin: 14px auto 2px;
+  max-width: 100%;
+}
+
+.apache-feather {
+  width: 72px;
+  height: 14px;
+  border-radius: 80% 20% 70% 30%;
+  background: linear-gradient(100deg, #6b238e 0%, #c31d32 42%, #f3a529 74%, #d5268b 100%);
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
+  transform: rotate(-8deg);
+}
+
+.apache-powered-text {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: end;
+  column-gap: 4px;
+  color: #d5268b;
+  line-height: 1;
+}
+
+.apache-powered-text small {
+  grid-column: 1 / -1;
+  color: #333333;
+  font-size: 0.58rem;
   font-weight: 800;
 }
 
-.apache-facts strong {
+.apache-powered-text strong {
+  font-size: 1.32rem;
+  letter-spacing: 0;
+}
+
+.apache-powered-text em {
+  align-self: start;
+  color: #333333;
+  font-size: 0.64rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.apache-test-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin: 16px 0 0;
+  border-top: 1px solid #e5e5e5;
+  padding-top: 10px;
+  color: #666666;
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.apache-test-meta span {
   overflow-wrap: anywhere;
 }
 
@@ -566,6 +616,12 @@ button {
   display: grid;
   align-content: center;
   gap: 8px;
+  padding: 22px;
+}
+
+.browser-message p {
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .browser-message.error {
@@ -815,12 +871,26 @@ body[data-terminal-mode="minimized"] .terminal-resize {
     grid-template-columns: 1fr;
   }
 
-  .apache-hero {
-    align-items: flex-start;
+  .apache-test-header {
+    padding: 10px 12px;
   }
 
-  .apache-facts {
+  .apache-test-header h4 {
+    font-size: 0.95rem;
+  }
+
+  .apache-test-content {
+    padding: 14px;
+  }
+
+  .apache-test-columns {
     grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .apache-powered {
+    justify-content: flex-start;
+    margin-left: 0;
   }
 
   .terminal-controls {

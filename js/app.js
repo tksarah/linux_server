@@ -351,22 +351,41 @@ function renderBrowser(view) {
   els.browserUrl.value = view.browser.url;
   if (view.browser.kind === "apache") {
     els.browserViewport.innerHTML = `
-      <div class="browser-page">
-        <div class="apache-hero">
-          <div class="apache-mark">Apache</div>
-          <div>
-            <p class="apache-kicker">Virtual server response</p>
-            <h4>${escapeHtml(view.browser.title)}</h4>
+      <div class="browser-page apache-test-page">
+        <header class="apache-test-header">
+          <h4>${escapeHtml(view.browser.title)}</h4>
+        </header>
+        <div class="apache-test-content">
+          <p class="apache-test-intro">${escapeHtml(view.browser.body)}</p>
+          <div class="apache-test-columns">
+            <section class="apache-test-section">
+              <h5>あなたが一般ユーザーの場合:</h5>
+              <p>このページが表示されているということは、アクセス先のWebサーバーはHTTPリクエストに応答しています。</p>
+              <p>期待したWebサイトではなくこのテストページが表示される場合は、まだ公開用コンテンツが配置されていない可能性があります。</p>
+              <p>この仮想ラボでは、Apacheの起動確認としてこの画面を使います。端末の <code>curl http://localhost/</code> と同じサーバー応答を、ブラウザ表示として確認しています。</p>
+            </section>
+            <section class="apache-test-section">
+              <h5>あなたがWebサイト管理者の場合:</h5>
+              <p>Apache HTTP Server は起動しており、port 80で待ち受けています。学習環境では、systemdで <code>httpd.service</code> がactiveになっている状態です。</p>
+              <p>Webサイトを公開するには、DocumentRootである <code>/var/www/html/</code> にHTMLファイルを追加します。設定を変更した場合は、サービスの再読み込みや再起動も確認してください。</p>
+              <div class="apache-powered" aria-label="Powered by Apache 2.4">
+                <span class="apache-feather"></span>
+                <span class="apache-powered-text">
+                  <small>Powered by</small>
+                  <strong>APACHE</strong>
+                  <em>2.4</em>
+                </span>
+              </div>
+            </section>
           </div>
-        </div>
-        <p class="apache-success">${escapeHtml(view.browser.body)}</p>
-        <div class="apache-facts">
-          <div><span>URL</span><strong>${escapeHtml(view.browser.url)}</strong></div>
-          <div><span>Status</span><strong>${escapeHtml(view.browser.status)}</strong></div>
-          <div><span>Host</span><strong>${escapeHtml(view.browser.host || "web01.lab.local")}</strong></div>
-          <div><span>Service</span><strong>${escapeHtml(view.browser.service || "httpd.service")}</strong></div>
-          <div><span>State</span><strong>${escapeHtml(view.browser.serviceState || "active")}</strong></div>
-          <div><span>Port</span><strong>${escapeHtml(view.browser.port || 80)}</strong></div>
+          <p class="apache-test-meta">
+            <span>URL: ${escapeHtml(view.browser.url)}</span>
+            <span>Status: ${escapeHtml(view.browser.status)}</span>
+            <span>Host: ${escapeHtml(view.browser.host || "web01.lab.local")}</span>
+            <span>Service: ${escapeHtml(view.browser.service || "httpd.service")}</span>
+            <span>State: ${escapeHtml(view.browser.serviceState || "active")}</span>
+            <span>Port: ${escapeHtml(view.browser.port || 80)}</span>
+          </p>
         </div>
       </div>
     `;
