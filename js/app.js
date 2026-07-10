@@ -26,7 +26,7 @@ const selectors = {
   browserUrl: "#browserUrl",
   browserReload: "#browserReload",
   browserViewport: "#browserViewport",
-  commandTips: "#commandTips",
+  learningSupport: "#learningSupport",
   terminalPanel: "#terminalPanel",
   terminalHeader: "#terminalHeader",
   terminalHome: "#terminalHome",
@@ -44,11 +44,12 @@ let terminalLines = [];
 let historyIndex = 0;
 let dragState = null;
 let resizeState = null;
+let guideReveal = {};
 
 init();
 
 function init() {
-  appendTerminal("system", "systemd / Apache 初級ラボへようこそ。help で利用できるコマンドを確認できます。");
+  appendTerminal("system", "EL9 Apache 初級ラボへようこそ。問いを読み、必要なときだけヒントを開いて進めましょう。");
   bindEvents();
   restoreTerminalMode();
   render();
@@ -66,6 +67,12 @@ function bindEvents() {
   els.resetScenario.addEventListener("click", () => resetScenario());
 
   document.addEventListener("click", (event) => {
+    const guideButton = event.target.closest("[data-guide-action]");
+    if (guideButton) {
+      revealGuideStep(guideButton.dataset.stepId);
+      return;
+    }
+
     const commandButton = event.target.closest("[data-command]");
     if (commandButton) {
       insertCommand(commandButton.dataset.command);
@@ -113,6 +120,7 @@ function switchScenario(scenarioId) {
   writeStorage(STORAGE_KEYS.scenario, scenarioId);
   state = createState(scenarioId);
   terminalLines = [];
+  guideReveal = {};
   appendTerminal("system", `演習を切り替えました: ${getDerivedViews(state).scenario.title}`);
   render();
   renderTerminal();
@@ -122,6 +130,7 @@ function switchScenario(scenarioId) {
 function resetScenario() {
   state = createState(currentScenarioId);
   terminalLines = [];
+  guideReveal = {};
   appendTerminal("system", "演習を初期状態へ戻しました。");
   render();
   renderTerminal();
@@ -134,6 +143,7 @@ function executeTerminalCommand() {
   appendTerminal("input", `[student@web01 ~]$ ${input}`);
   els.terminalInput.value = "";
 
+  const before = getDerivedViews(state);
   const result = runCommand(state, input);
   historyIndex = state.commands.length;
 
@@ -148,6 +158,7 @@ function executeTerminalCommand() {
     appendTerminal("system", "初期状態へ戻りました。");
   }
 
+  announceCompletedSteps(before, getDerivedViews(state));
   render();
   renderTerminal();
   focusTerminal();
@@ -213,9 +224,17 @@ function insertCommand(command) {
   focusTerminal({ force: true });
 }
 
+function revealGuideStep(stepId) {
+  guideReveal[stepId] = Math.min(2, (guideReveal[stepId] || 0) + 1);
+  render();
+  focusTerminal();
+}
+
 function loadBrowser(url) {
+  const before = getDerivedViews(state);
   const result = loadVirtualBrowser(state, url);
   els.browserUrl.value = result.url;
+  announceCompletedSteps(before, getDerivedViews(state));
   render();
   focusTerminal();
 }
@@ -228,7 +247,7 @@ function render() {
   renderGoals(view);
   renderState(view);
   renderBrowser(view);
-  renderCommandTips(view);
+  renderLearningSupport(view);
 }
 
 function renderScenarioList(view) {
@@ -260,22 +279,40 @@ function renderCurrentExercise(view) {
 }
 
 function renderGuide(view) {
+  const currentStepId = view.currentStepId;
   els.guideSteps.innerHTML = view.guide
     .map((step, index) => {
+      const revealLevel = step.done ? 2 : (guideReveal[step.id] || 0);
       const commands = step.commands
         .map((command) => `<button type="button" class="command-chip" data-command="${escapeAttr(command)}">${escapeHtml(command)}</button>`)
         .join("");
       const browserAction = step.browserUrl
         ? `<button type="button" class="command-chip browser-chip" data-browser-url="${escapeAttr(step.browserUrl)}">仮想ブラウザ: ${escapeHtml(step.browserUrl)}</button>`
         : "";
+      const hint = revealLevel >= 1 && step.hints?.length
+        ? `<div class="step-hint"><strong>考え方</strong><p>${escapeHtml(step.hints[0])}</p></div>`
+        : "";
+      const commandArea = revealLevel >= 2
+        ? `<div class="step-commands"><strong>コマンド例</strong><div class="chip-row">${commands}${browserAction}</div></div>`
+        : "";
+      const revealButton = !step.done && revealLevel < 2
+        ? `<button type="button" class="hint-button" data-guide-action="reveal" data-step-id="${escapeAttr(step.id)}">${revealLevel === 0 ? "考え方のヒントを見る" : "コマンド例を見る"}</button>`
+        : "";
+      const explanation = step.done
+        ? `<div class="step-explanation"><strong>分かったこと</strong><p>${escapeHtml(step.explanation)}</p></div>`
+        : "";
       return `
-        <section class="step-item${step.done ? " done" : ""}">
+        <section class="step-item${step.done ? " done" : ""}${step.id === currentStepId ? " current" : ""}">
           <div class="step-index">${step.done ? "✓" : index + 1}</div>
           <div>
             <div class="step-phase">${escapeHtml(step.phase)}</div>
             <h4>${escapeHtml(step.purpose)}</h4>
-            <p>${escapeHtml(step.expected)}</p>
-            <div class="chip-row">${commands}${browserAction}</div>
+            <p class="step-prompt">${escapeHtml(step.prompt)}</p>
+            ${hint}
+            ${revealButton}
+            ${commandArea}
+            ${step.done ? `<p class="step-expected"><strong>確認できる出力:</strong> ${escapeHtml(step.expected)}</p>` : ""}
+            ${explanation}
           </div>
         </section>
       `;
@@ -349,7 +386,7 @@ function renderState(view) {
 
 function renderBrowser(view) {
   els.browserUrl.value = view.browser.url;
-  if (view.browser.kind === "apache") {
+  if (view.browser.kind === "httpd") {
     els.browserViewport.innerHTML = `
       <div class="browser-page apache-test-page">
         <header class="apache-test-header">
@@ -392,6 +429,30 @@ function renderBrowser(view) {
     return;
   }
 
+  if (view.browser.kind === "nginx") {
+    els.browserViewport.innerHTML = `
+      <div class="browser-page nginx-page">
+        <div class="nginx-hero">
+          <div class="nginx-mark">nginx</div>
+          <div>
+            <p class="nginx-kicker">Virtual server response</p>
+            <h4>${escapeHtml(view.browser.title)}</h4>
+          </div>
+        </div>
+        <p class="nginx-success">${escapeHtml(view.browser.body)}</p>
+        <div class="nginx-facts">
+          <div><span>URL</span><strong>${escapeHtml(view.browser.url)}</strong></div>
+          <div><span>Status</span><strong>${escapeHtml(view.browser.status)}</strong></div>
+          <div><span>Host</span><strong>${escapeHtml(view.browser.host || "web01.lab.local")}</strong></div>
+          <div><span>Service</span><strong>${escapeHtml(view.browser.service || "nginx.service")}</strong></div>
+          <div><span>State</span><strong>${escapeHtml(view.browser.serviceState || "active")}</strong></div>
+          <div><span>Port</span><strong>${escapeHtml(view.browser.port || 80)}</strong></div>
+        </div>
+      </div>
+    `;
+    return;
+  }
+
   const statusClass = view.browser.kind === "idle" ? "idle" : "error";
   els.browserViewport.innerHTML = `
     <div class="browser-message ${statusClass}">
@@ -402,10 +463,27 @@ function renderBrowser(view) {
   `;
 }
 
-function renderCommandTips(view) {
-  els.commandTips.innerHTML = view.commandTips
-    .map((command) => `<button type="button" class="command-chip" data-command="${escapeAttr(command)}">${escapeHtml(command)}</button>`)
-    .join("");
+function renderLearningSupport(view) {
+  const current = view.guide.find((step) => step.id === view.currentStepId);
+  els.learningSupport.innerHTML = `
+    <div class="learning-note">
+      <strong>自分で考えてから必要なヒントだけ開きます</strong>
+      <p>コマンドチップは端末の入力欄へ入るだけです。Enterキーまたは「実行」を押して実行してください。</p>
+      <p>${current ? `現在の問い: ${escapeHtml(current.prompt)}` : "この演習の全ゴールを達成しました。"}</p>
+    </div>
+  `;
+}
+
+function announceCompletedSteps(before, after) {
+  const beforeDone = new Set(before.guide.filter((step) => step.done).map((step) => step.id));
+  const newlyDone = after.guide.filter((step) => step.done && !beforeDone.has(step.id));
+  for (const step of newlyDone) {
+    appendTerminal("system", `✓ 手順完了: ${step.purpose}`);
+  }
+  if (newlyDone.length) {
+    const next = after.guide.find((step) => !step.done);
+    appendTerminal("system", next ? `次の問い: ${next.prompt}` : "この演習の全手順を完了しました。");
+  }
 }
 
 function appendTerminal(kind, text) {
@@ -424,11 +502,13 @@ function commandPalette() {
   const view = getDerivedViews(state);
   return Array.from(
     new Set([
-      ...view.commandTips,
+      ...view.scenario.guide.steps.flatMap((step) => step.commands),
       "help",
       "clear",
       "reset",
-      "sudo dnf makecache",
+      "dnf repolist",
+      "dnf check-update",
+      "echo $?",
       "dnf info httpd",
       "sudo dnf install -y httpd",
       "systemctl status httpd",

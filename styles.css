@@ -282,6 +282,19 @@ button {
   border-top: 1px solid var(--line);
 }
 
+.step-item.current {
+  margin: 0 -10px;
+  border: 1px solid #b9d2e8;
+  border-radius: 10px;
+  background: #f4f9fd;
+  padding: 12px 10px;
+}
+
+.step-item.current:first-child {
+  border-top: 1px solid #b9d2e8;
+  padding-top: 12px;
+}
+
 .step-item:first-child {
   border-top: 0;
   padding-top: 0;
@@ -306,8 +319,55 @@ button {
   line-height: 1.55;
 }
 
-.chip-row,
-.command-tips {
+.step-prompt {
+  color: var(--ink) !important;
+  font-weight: 700;
+}
+
+.step-hint,
+.step-explanation,
+.step-commands {
+  margin: 10px 0;
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.step-hint {
+  border-left: 4px solid var(--amber);
+  background: var(--amber-soft);
+}
+
+.step-explanation {
+  border-left: 4px solid var(--green);
+  background: var(--green-soft);
+}
+
+.step-commands {
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.step-hint p,
+.step-explanation p {
+  margin-bottom: 0;
+  color: var(--ink);
+}
+
+.step-expected {
+  font-size: 0.86rem;
+}
+
+.hint-button {
+  min-height: 34px;
+  border: 1px solid #d3b77e;
+  border-radius: 8px;
+  background: #fffaf0;
+  color: #704a0e;
+  padding: 6px 10px;
+  font-weight: 700;
+}
+
+.chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -324,6 +384,12 @@ button {
   font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
   font-size: 0.83rem;
   overflow-wrap: anywhere;
+}
+
+.learning-note p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.55;
 }
 
 .browser-chip {
@@ -612,6 +678,75 @@ button {
   overflow-wrap: anywhere;
 }
 
+.nginx-page {
+  padding: 22px;
+}
+
+.nginx-hero {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 16px;
+}
+
+.nginx-mark {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  place-items: center;
+  border-radius: 50%;
+  background: #138a43;
+  color: #ffffff;
+  font-size: 0.75rem;
+  font-weight: 900;
+}
+
+.nginx-kicker {
+  margin: 0 0 5px;
+  color: var(--green);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.nginx-page h4 {
+  margin: 0 0 12px;
+  font-size: 1.55rem;
+}
+
+.nginx-success {
+  margin: 0 0 16px;
+  color: var(--ink);
+  font-weight: 700;
+  line-height: 1.6;
+}
+
+.nginx-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.nginx-facts div {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8faf8;
+  padding: 9px 10px;
+}
+
+.nginx-facts span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.nginx-facts strong {
+  overflow-wrap: anywhere;
+}
+
 .browser-message {
   display: grid;
   align-content: center;
@@ -681,8 +816,17 @@ button {
 
 .terminal-body {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto auto;
   height: calc(100% - 44px);
+}
+
+.terminal-help {
+  margin: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--terminal-muted);
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 
 .terminal-output {
@@ -891,6 +1035,14 @@ body[data-terminal-mode="minimized"] .terminal-resize {
   .apache-powered {
     justify-content: flex-start;
     margin-left: 0;
+  }
+
+  .nginx-hero {
+    align-items: flex-start;
+  }
+
+  .nginx-facts {
+    grid-template-columns: 1fr;
   }
 
   .terminal-controls {

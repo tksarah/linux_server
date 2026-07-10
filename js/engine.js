@@ -1,6 +1,6 @@
 import { getScenario, scenarios } from "./scenarios.js";
 
-const LOCAL_URLS = new Set(["localhost", "127.0.0.1", "::1", "web01.lab.local"]);
+const LOCAL_URLS = new Set(["localhost", "127.0.0.1", "::1", "web01.lab.local", "192.168.56.20"]);
 
 export function createState(scenarioInput = scenarios[0]) {
   const scenario = typeof scenarioInput === "string" ? getScenario(scenarioInput) : scenarioInput;
@@ -10,6 +10,7 @@ export function createState(scenarioInput = scenarios[0]) {
   state.observations = [];
   state.successes = [];
   state.failures = [];
+  state.shell = { lastExitCode: 0 };
   state.logs = clone(scenario.start.logs || []);
   state.browser = {
     url: "http://localhost/",
@@ -17,7 +18,7 @@ export function createState(scenarioInput = scenarios[0]) {
     ok: false,
     title: "仮想ブラウザ",
     kind: "idle",
-    body: "アドレスバーに http://localhost/ を入れて開くと、仮想Apacheの状態に応じた表示になります。"
+    body: "アドレスバーに http://localhost/ を入れて開くと、port 80を待ち受ける仮想Webサーバーの応答を表示します。"
   };
   ensureDefaults(state);
   refreshVirtualFiles(state);
@@ -27,19 +28,21 @@ export function createState(scenarioInput = scenarios[0]) {
 export function runCommand(state, input) {
   const raw = input.trim();
   if (!raw) {
-    return { state, output: "", clear: false, reset: false };
+    return { state, output: "", clear: false, reset: false, exitCode: state.shell.lastExitCode };
   }
 
   const tokens = tokenize(raw);
   if (tokens.error) {
     addFailure(state, "shell:parse-error");
-    return { state, output: `bash: ${tokens.error}`, clear: false, reset: false };
+    state.shell.lastExitCode = 2;
+    return { state, output: `bash: ${tokens.error}`, clear: false, reset: false, exitCode: 2 };
   }
 
   const context = parseCommandContext(tokens);
   if (!context.tokens.length) {
     addFailure(state, "sudo:missing-command");
-    return { state, output: "sudo: a command is required", clear: false, reset: false };
+    state.shell.lastExitCode = 1;
+    return { state, output: "sudo: a command is required", clear: false, reset: false, exitCode: 1 };
   }
   const normalized = normalizeTokens(context.tokens);
   state.commands.push({ raw, normalized });
@@ -59,49 +62,54 @@ export function runCommand(state, input) {
       result = { output: "この演習を初期状態へ戻します。", reset: true };
       break;
     case "dnf":
-      result = { output: handleDnf(state, context.tokens, context) };
+      result = handleDnf(state, context.tokens, context);
       break;
     case "rpm":
-      result = { output: handleRpm(state, tokens) };
+      result = { output: handleRpm(state, context.tokens) };
+      break;
+    case "echo":
+      result = { output: handleEcho(state, context.tokens) };
       break;
     case "systemctl":
       result = { output: handleSystemctl(state, context.tokens, context) };
       break;
     case "journalctl":
-      result = { output: handleJournalctl(state, tokens) };
+      result = { output: handleJournalctl(state, context.tokens) };
       break;
     case "ss":
-      result = { output: handleSs(state, tokens) };
+      result = { output: handleSs(state, context.tokens, context) };
       break;
     case "curl":
-      result = { output: handleCurl(state, tokens) };
+      result = { output: handleCurl(state, context.tokens) };
       break;
     case "ip":
-      result = { output: handleIp(state, tokens) };
+      result = { output: handleIp(state, context.tokens) };
       break;
     case "ping":
-      result = { output: handlePing(state, tokens) };
+      result = { output: handlePing(state, context.tokens) };
       break;
     case "dig":
-      result = { output: handleDig(state, tokens) };
+      result = { output: handleDig(state, context.tokens) };
       break;
     case "nslookup":
-      result = { output: handleNslookup(state, tokens) };
+      result = { output: handleNslookup(state, context.tokens) };
       break;
     case "cat":
-      result = { output: handleCat(state, tokens) };
+      result = { output: handleCat(state, context.tokens) };
       break;
     case "hostnamectl":
       result = { output: handleHostnamectl(state) };
       break;
     default:
       addFailure(state, `command:not-found:${context.tokens[0]}`);
-      result = { output: `bash: ${context.tokens[0]}: command not found\nヒント: help で、このラボで使えるコマンドを確認できます。` };
+      result = { output: `bash: ${context.tokens[0]}: command not found\nヒント: help で、このラボで使えるコマンドを確認できます。`, exitCode: 127 };
       break;
   }
 
   refreshVirtualFiles(state);
-  return { state, clear: false, reset: false, ...result };
+  const exitCode = Number.isInteger(result.exitCode) ? result.exitCode : 0;
+  state.shell.lastExitCode = exitCode;
+  return { state, clear: false, reset: false, ...result, exitCode };
 }
 
 export function getDerivedViews(state) {
@@ -152,7 +160,7 @@ export function getDerivedViews(state) {
     network: state.runtime.network,
     browser: { ...state.browser },
     listeners: activeListeners(state),
-    commandTips: scenario.commandTips
+    currentStepId: guide.find((step) => !step.done)?.id || null
   };
 }
 
@@ -218,7 +226,8 @@ export function loadVirtualBrowser(state, urlInput) {
   }
 
   addObservation(state, "browser:localhost");
-  if (!isPortListening(state, 80, "httpd")) {
+  const response = resolveHttpResponse(state, 80);
+  if (!response) {
     state.browser = {
       url,
       status: "ERR_CONNECTION_REFUSED",
@@ -231,17 +240,17 @@ export function loadVirtualBrowser(state, urlInput) {
     return { ...state.browser };
   }
 
-  addSuccess(state, "web:httpd:browser");
+  addSuccess(state, `web:${response.service}:browser`);
   state.browser = {
     url,
     status: "200 OK",
     ok: true,
-    title: "Apache HTTP Server テストページ",
-    kind: "apache",
-    body: "このページは、Apache HTTP Server のインストール後に、この仮想サーバーがHTTPリクエストへ応答できるか確認するためのテストページです。",
+    title: response.title,
+    kind: response.service,
+    body: response.summary,
     host: state.runtime.hostname,
-    service: "httpd.service",
-    serviceState: state.runtime.services.httpd.activeState,
+    service: `${response.service}.service`,
+    serviceState: state.runtime.services[response.service].activeState,
     port: 80
   };
   return { ...state.browser };
@@ -250,98 +259,134 @@ export function loadVirtualBrowser(state, urlInput) {
 function handleDnf(state, tokens, context = { sudo: false }) {
   const subcommand = tokens[1];
   if (!subcommand) {
-    return "usage: dnf [makecache|info|install|list|check-update|repolist] ...";
+    return dnfResult("usage: dnf [check-update|repolist|info|install|list|makecache] ...", 1);
   }
 
-  if (["makecache", "install"].includes(subcommand) && !context.sudo) {
+  if (subcommand === "install" && !context.sudo) {
     addFailure(state, `sudo:required:dnf:${subcommand}`);
-    return sudoRequiredMessage(`dnf ${subcommand}`);
+    return dnfResult(sudoRequiredMessage(`dnf ${subcommand}`), 1);
   }
 
   if (subcommand === "makecache") {
-    state.runtime.cacheFresh = true;
-    addSuccess(state, "dnf:makecache");
-    return [
-      "Rocky Linux 9 - BaseOS                     2.1 MB/s | 2.4 MB     00:01",
-      "Rocky Linux 9 - AppStream                  2.8 MB/s | 8.3 MB     00:03",
-      "Metadata cache created."
-    ].join("\n");
+    if (!state.runtime.dnfMetadata.reposReachable) {
+      addFailure(state, "dnf:metadata:unreachable");
+      return dnfResult("Errors during downloading metadata for repository 'baseos'.", 1);
+    }
+    const downloaded = syncDnfMetadata(state, tokens.includes("--refresh"));
+    addObservation(state, downloaded ? "dnf:makecache:downloaded" : "dnf:makecache:reused");
+    return dnfResult(downloaded
+      ? [
+          "EL9 Lab - BaseOS                       2.1 MB/s | 2.4 MB     00:01",
+          "EL9 Lab - AppStream                    2.8 MB/s | 8.3 MB     00:03",
+          "Metadata cache created."
+        ].join("\n")
+      : `${metadataCheckLine(state)}\nMetadata cache created.`);
   }
 
   if (subcommand === "repolist") {
     addObservation(state, "dnf:repolist");
-    return [
-      "repo id       repo name",
-      "baseos        Rocky Linux 9 - BaseOS",
-      "appstream     Rocky Linux 9 - AppStream"
-    ].join("\n");
+    const rows = Object.entries(state.config.repos)
+      .filter(([, repo]) => repo.enabled)
+      .map(([id, repo]) => `${id.padEnd(13)} ${repo.name}`);
+    return dnfResult(["repo id       repo name", ...rows].join("\n"));
   }
 
   if (subcommand === "check-update") {
-    addObservation(state, "dnf:check-update");
-    return [
-      "Last metadata expiration check: 0:02:11 ago on Sat 04 Jul 2026 10:16:00 AM JST.",
-      "No packages marked for update in this lab."
-    ].join("\n");
+    if (!state.runtime.dnfMetadata.reposReachable) {
+      addFailure(state, "dnf:check-update:error");
+      return dnfResult("Error: Failed to download metadata for repo 'baseos'.", 1);
+    }
+    syncDnfMetadata(state, tokens.includes("--refresh"));
+    const updates = availableUpdates(state);
+    if (!updates.length) {
+      addObservation(state, "dnf:check-update:no-updates");
+      return dnfResult(metadataCheckLine(state), 0);
+    }
+    addObservation(state, "dnf:check-update:updates-available");
+    const rows = updates.map(({ name, pkg }) =>
+      `${`${name}.${pkg.arch}`.padEnd(36)} ${`${pkg.availableVersion}-${pkg.release}`.padEnd(24)} ${pkg.repo}`
+    );
+    return dnfResult([metadataCheckLine(state), "", ...rows].join("\n"), 100);
   }
 
   if (subcommand === "info") {
+    if (!state.runtime.dnfMetadata.reposReachable) {
+      addFailure(state, "dnf:info:error");
+      return dnfResult("Error: Failed to download metadata for repo 'appstream'.", 1);
+    }
+    syncDnfMetadata(state, tokens.includes("--refresh"));
     const packageName = tokens[2];
     if (!packageName || !state.config.packages[packageName]) {
-      return "Error: No matching Packages to list";
+      return dnfResult("Error: No matching Packages to list", 1);
     }
     addObservation(state, `dnf:info:${packageName}`);
     const pkg = state.config.packages[packageName];
-    return [
+    return dnfResult([
+      pkg.installed ? "Installed Packages" : "Available Packages",
       `Name         : ${packageName}`,
-      `Version      : ${pkg.version}`,
-      "Architecture : x86_64",
+      `Version      : ${pkg.installed ? pkg.installedVersion : pkg.availableVersion}`,
+      `Release      : ${pkg.installed ? pkg.installedRelease : pkg.release}`,
+      `Architecture : ${pkg.arch}`,
       `Repository   : ${pkg.installed ? "@System" : pkg.repo}`,
       `Summary      : ${pkg.summary}`,
       packageName === "httpd"
         ? "Description  : Apache is a powerful, efficient, and extensible HTTP server."
-        : "Description  : nginx is an HTTP and reverse proxy server."
-    ].join("\n");
+        : packageName === "nginx"
+          ? "Description  : nginx is an HTTP and reverse proxy server."
+          : "Description  : GNU bash is a shell and command language interpreter."
+    ].join("\n"));
   }
 
   if (subcommand === "install") {
+    if (!state.runtime.dnfMetadata.reposReachable) {
+      addFailure(state, "dnf:install:metadata-error");
+      return dnfResult("Error: Failed to download metadata for repo 'appstream'.", 1);
+    }
+    syncDnfMetadata(state, tokens.includes("--refresh"));
     const packageName = tokens.slice(2).find((token) => !token.startsWith("-"));
     if (!packageName || !state.config.packages[packageName]) {
       addFailure(state, "dnf:install:not-found");
-      return "No match for argument.\nError: Unable to find a match";
+      return dnfResult("No match for argument.\nError: Unable to find a match", 1);
     }
     const pkg = state.config.packages[packageName];
     if (pkg.installed) {
       addSuccess(state, `dnf:install:${packageName}`);
-      return `Package ${packageName}-${pkg.version}.x86_64 is already installed.\nNothing to do.`;
+      return dnfResult(`Package ${packageNevra(packageName, pkg, true)} is already installed.\nNothing to do.`);
     }
     pkg.installed = true;
+    pkg.installedVersion = pkg.availableVersion;
+    pkg.installedRelease = pkg.release;
     if (state.config.services[packageName]) {
       state.config.services[packageName].unitExists = true;
     }
     addSuccess(state, `dnf:install:${packageName}`);
-    addLog(state, packageName, `Installed package ${packageName}-${pkg.version}.x86_64.`, "info");
-    return [
+    addLog(state, packageName, `Installed package ${packageNevra(packageName, pkg, true)}.`, "info");
+    return dnfResult([
       "Dependencies resolved.",
       "================================================================================",
       " Package      Architecture  Version            Repository      Size",
-      ` ${packageName}        x86_64        ${pkg.version}     appstream       45 k`,
+      ` ${packageName.padEnd(12)} ${pkg.arch.padEnd(13)} ${`${pkg.availableVersion}-${pkg.release}`.padEnd(18)} ${pkg.repo.padEnd(15)} 45 k`,
       "================================================================================",
       "Transaction Summary",
       "Install  1 Package",
       "",
       "Complete!"
-    ].join("\n");
+    ].join("\n"));
   }
 
   if (subcommand === "list") {
-    const installedOnly = tokens.includes("installed");
-    const packageName = tokens[tokens.length - 1] === "installed" ? "" : tokens[tokens.length - 1];
+    const installedOnly = tokens.includes("installed") || tokens.includes("--installed");
+    const lastToken = tokens[tokens.length - 1];
+    const packageName = ["list", "installed", "--installed"].includes(lastToken) ? "" : lastToken;
     addObservation(state, "dnf:list");
-    return listPackages(state, installedOnly, packageName);
+    if (installedOnly && packageName && state.config.packages[packageName]?.installed) {
+      addObservation(state, `dnf:list:installed:${packageName}`);
+    }
+    const output = listPackages(state, installedOnly, packageName);
+    return dnfResult(output, output.startsWith("Error:") ? 1 : 0);
   }
 
-  return `No such command: ${subcommand}. Please use /usr/bin/dnf --help`;
+  return dnfResult(`No such command: ${subcommand}. Please use /usr/bin/dnf --help`, 1);
 }
 
 function handleRpm(state, tokens) {
@@ -349,12 +394,54 @@ function handleRpm(state, tokens) {
     return "usage: rpm -q PACKAGE";
   }
   const packageName = tokens[2];
-  addObservation(state, `rpm:q:${packageName}`);
   const pkg = state.config.packages[packageName];
   if (pkg?.installed) {
-    return `${packageName}-${pkg.version}.x86_64`;
+    addObservation(state, `rpm:q:${packageName}:installed`);
+    return packageNevra(packageName, pkg, true);
   }
+  addObservation(state, `rpm:q:${packageName}:not-installed`);
   return `package ${packageName} is not installed`;
+}
+
+function handleEcho(state, tokens) {
+  if (tokens.length === 2 && tokens[1] === "$?") {
+    const previous = state.shell.lastExitCode;
+    addObservation(state, `shell:exit-status:${previous}`);
+    return String(previous);
+  }
+  return tokens.slice(1).join(" ");
+}
+
+function dnfResult(output, exitCode = 0) {
+  return { output, exitCode };
+}
+
+function syncDnfMetadata(state, force = false) {
+  const metadata = state.runtime.dnfMetadata;
+  const shouldDownload = force || metadata.status !== "current";
+  metadata.status = "current";
+  metadata.lastCheck = "Sat 04 Jul 2026 10:16:00 AM JST";
+  if (shouldDownload) metadata.syncCount += 1;
+  return shouldDownload;
+}
+
+function metadataCheckLine(state) {
+  const lastCheck = state.runtime.dnfMetadata.lastCheck || "Sat 04 Jul 2026 10:16:00 AM JST";
+  return `Last metadata expiration check: 0:00:12 ago on ${lastCheck}.`;
+}
+
+function availableUpdates(state) {
+  return Object.entries(state.config.packages)
+    .filter(([, pkg]) => pkg.installed && (
+      pkg.installedVersion !== pkg.availableVersion || pkg.installedRelease !== pkg.release
+    ))
+    .map(([name, pkg]) => ({ name, pkg }));
+}
+
+function packageNevra(name, pkg, installed = false) {
+  const version = installed ? pkg.installedVersion : pkg.availableVersion;
+  const release = installed ? pkg.installedRelease : pkg.release;
+  return `${name}-${version}-${release}.${pkg.arch}`;
 }
 
 function handleSystemctl(state, tokens, context = { sudo: false }) {
@@ -386,6 +473,11 @@ function handleSystemctl(state, tokens, context = { sudo: false }) {
 
   if (action === "status") {
     addObservation(state, `systemctl:status:${unit}`);
+    if (state.config.services[unit].unitExists) {
+      addObservation(state, `systemctl:status:${unit}:${state.runtime.services[unit].activeState}`);
+    } else {
+      addObservation(state, `systemctl:status:${unit}:not-found`);
+    }
     return serviceStatus(state, unit);
   }
 
@@ -395,31 +487,27 @@ function handleSystemctl(state, tokens, context = { sudo: false }) {
   }
 
   if (action === "is-active") {
-    addObservation(state, `systemctl:is-active:${unit}`);
-    return state.runtime.services[unit].activeState;
+    const activeState = state.runtime.services[unit].activeState;
+    addObservation(state, `systemctl:is-active:${unit}:${activeState}`);
+    return activeState;
   }
 
   if (action === "is-enabled") {
-    addObservation(state, `systemctl:is-enabled:${unit}`);
-    return state.config.services[unit].enabled ? "enabled" : "disabled";
+    const enabledState = state.config.services[unit].enabled ? "enabled" : "disabled";
+    addObservation(state, `systemctl:is-enabled:${unit}:${enabledState}`);
+    return enabledState;
   }
 
   if (action === "enable") {
     state.config.services[unit].enabled = true;
     addSuccess(state, `service:${unit}:enabled`);
-    return [
-      `Created symlink /etc/systemd/system/multi-user.target.wants/${unit}.service -> /usr/lib/systemd/system/${unit}.service.`,
-      "enabled"
-    ].join("\n");
+    return `Created symlink /etc/systemd/system/multi-user.target.wants/${unit}.service -> /usr/lib/systemd/system/${unit}.service.`;
   }
 
   if (action === "disable") {
     state.config.services[unit].enabled = false;
     addSuccess(state, `service:${unit}:disabled`);
-    return [
-      `Removed /etc/systemd/system/multi-user.target.wants/${unit}.service.`,
-      "disabled"
-    ].join("\n");
+    return `Removed /etc/systemd/system/multi-user.target.wants/${unit}.service.`;
   }
 
   if (action === "stop") {
@@ -457,6 +545,9 @@ function handleJournalctl(state, tokens) {
   }
   if (unit === "httpd") {
     addObservation(state, "journalctl:httpd");
+    if (state.logs.some((entry) => entry.unit === "httpd" && /Address already in use|no listening sockets/.test(entry.message))) {
+      addObservation(state, "journalctl:httpd:bind-failed");
+    }
   } else {
     addObservation(state, `journalctl:${unit}`);
   }
@@ -468,19 +559,25 @@ function handleJournalctl(state, tokens) {
   return rows.map((entry) => `${entry.time} ${state.runtime.hostname} ${entry.unit}[${journalPid(state, entry.unit)}]: ${entry.message}`).join("\n");
 }
 
-function handleSs(state, tokens) {
+function handleSs(state, tokens, context = { sudo: false }) {
   const joined = tokens.slice(1).join("");
   if (!joined.includes("l") || !joined.includes("n") || !joined.includes("t")) {
-    return "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process\nヒント: ss -lntp でLISTEN中のTCPポートを確認します。";
+    return "Netid State  Recv-Q Send-Q Local Address:Port Peer Address:Port\nヒント: ss -lnt でLISTEN中のTCPポートを確認します。";
   }
-  addObservation(state, "ss:lntp");
-  const lines = ["State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process"];
+  const showProcess = joined.includes("p") && context.sudo;
+  addObservation(state, showProcess ? "ss:lntp:privileged" : "ss:lnt");
+  const lines = [showProcess
+    ? "State  Recv-Q Send-Q Local Address:Port Peer Address:Port Process"
+    : "State  Recv-Q Send-Q Local Address:Port Peer Address:Port"];
   const listeners = activeListeners(state);
   if (!listeners.length) return lines.join("\n");
   for (const listener of listeners) {
-    lines.push(
-      `LISTEN 0      511          0.0.0.0:${listener.port}      0.0.0.0:*     users:(("${listener.process}",pid=${listener.pid},fd=4))`
-    );
+    addObservation(state, `ss:port:${listener.port}:listening`);
+    if (showProcess) addObservation(state, `ss:port:${listener.port}:${listener.service}`);
+    const base = `LISTEN 0      511          0.0.0.0:${listener.port}      0.0.0.0:*`;
+    lines.push(showProcess
+      ? `${base}     users:(("${listener.process}",pid=${listener.pid},fd=4))`
+      : base);
   }
   return lines.join("\n");
 }
@@ -493,18 +590,19 @@ function handleCurl(state, tokens) {
     return `curl: (6) Could not resolve host: ${url}`;
   }
   addObservation(state, "curl:localhost");
-  if (!isPortListening(state, 80, "httpd")) {
+  const response = resolveHttpResponse(state, 80);
+  if (!response) {
     addFailure(state, "web:httpd:curl:refused");
     return "curl: (7) Failed to connect to localhost port 80 after 0 ms: Connection refused";
   }
-  addSuccess(state, "web:httpd:curl");
+  addSuccess(state, `web:${response.service}:curl`);
   return [
     "<!doctype html>",
     "<html>",
-    "<head><title>Apache HTTP Server Test Page</title></head>",
+    `<head><title>${response.title}</title></head>`,
     "<body>",
-    "<h1>Apache HTTP Server Test Page</h1>",
-    "<p>It works from the virtual httpd service.</p>",
+    `<h1>${response.heading}</h1>`,
+    `<p>${response.message}</p>`,
     "</body>",
     "</html>"
   ].join("\n");
@@ -556,12 +654,13 @@ function handleDig(state, tokens) {
   const name = tokens[1] || "localhost";
   addObservation(state, `dig:${name}`);
   if (name === "localhost" || name === "web01.lab.local") {
+    const address = name === "localhost" ? "127.0.0.1" : state.runtime.network.address.split("/")[0];
     return [
       `;; QUESTION SECTION:`,
       `;${name}.                 IN      A`,
       "",
       ";; ANSWER SECTION:",
-      `${name}.          0       IN      A       127.0.0.1`
+      `${name}.          0       IN      A       ${address}`
     ].join("\n");
   }
   return ";; connection timed out; no servers could be reached";
@@ -571,12 +670,13 @@ function handleNslookup(state, tokens) {
   const name = tokens[1] || "localhost";
   addObservation(state, `nslookup:${name}`);
   if (name === "localhost" || name === "web01.lab.local") {
+    const address = name === "localhost" ? "127.0.0.1" : state.runtime.network.address.split("/")[0];
     return [
       `Server:         ${state.runtime.network.dns}`,
       `Address:        ${state.runtime.network.dns}#53`,
       "",
       `Name:   ${name}`,
-      "Address: 127.0.0.1"
+      `Address: ${address}`
     ].join("\n");
   }
   return `** server can't find ${name}: NXDOMAIN`;
@@ -601,8 +701,8 @@ function handleHostnamectl(state) {
     "         Chassis: vm",
     "      Machine ID: 9f0d9d82d2a24df7a4d2f1c0a001lab",
     "   Boot ID: 5214e71c3c3d4f86a5f06f001apache",
-    "Operating System: Rocky Linux 9.4 (Blue Onyx)",
-    "     CPE OS Name: cpe:/o:rocky:rocky:9::baseos",
+    "Operating System: EL9-compatible training environment",
+    "     CPE OS Name: cpe:/o:linux:el9_lab:9",
     "          Kernel: Linux 5.14.0-427.el9.x86_64",
     "    Architecture: x86-64"
   ].join("\n");
@@ -702,7 +802,10 @@ function listPackages(state, installedOnly, packageName) {
     if (packageName && packageName !== name) continue;
     if (installedOnly && !pkg.installed) continue;
     const repo = pkg.installed ? "@System" : pkg.repo;
-    rows.push(`${name}.x86_64                         ${pkg.version}                     ${repo}`);
+    const version = pkg.installed
+      ? `${pkg.installedVersion}-${pkg.installedRelease}`
+      : `${pkg.availableVersion}-${pkg.release}`;
+    rows.push(`${`${name}.${pkg.arch}`.padEnd(36)} ${version.padEnd(28)} ${repo}`);
   }
   if (!rows.length) return "Error: No matching Packages to list";
   return [installedOnly ? "Installed Packages" : "Available Packages", ...rows].join("\n");
@@ -727,24 +830,45 @@ function portOwner(state, port, excludeService) {
   return activeListeners(state).find((listener) => listener.port === port && listener.service !== excludeService);
 }
 
+function resolveHttpResponse(state, port) {
+  const listener = activeListeners(state).find((item) => item.port === port);
+  if (!listener) return null;
+  if (listener.service === "nginx") {
+    return {
+      service: "nginx",
+      title: "Welcome to nginx!",
+      heading: "Welcome to nginx!",
+      message: "This response is served by the virtual nginx service.",
+      summary: "port 80には接続できましたが、応答したのはApacheではなく仮想nginxです。"
+    };
+  }
+  return {
+    service: "httpd",
+    title: "Apache HTTP Server テストページ",
+    heading: "Apache HTTP Server Test Page",
+    message: "This response is served by the virtual httpd service.",
+    summary: "このページは、Apache HTTP Serverのインストール後に、仮想httpdがport 80でHTTPリクエストへ応答できるか確認するためのテストページです。"
+  };
+}
+
 function refreshVirtualFiles(state) {
   const base = {
     "/etc/os-release": [
-      'NAME="Rocky Linux"',
-      'VERSION="9.4 (Blue Onyx)"',
-      'ID="rocky"',
+      'NAME="EL9 Lab"',
+      'VERSION="9 (training environment)"',
+      'ID="el9-lab"',
       'PLATFORM_ID="platform:el9"',
-      'PRETTY_NAME="Rocky Linux 9.4 (Blue Onyx)"'
+      'PRETTY_NAME="EL9-compatible training environment"'
     ].join("\n"),
     "/etc/hostname": state.runtime.hostname,
     "/etc/resolv.conf": `nameserver ${state.runtime.network.dns}\nsearch lab.local`,
-    "/etc/yum.repos.d/rocky.repo": [
+    "/etc/yum.repos.d/el9-lab.repo": [
       "[baseos]",
-      "name=Rocky Linux 9 - BaseOS",
+      "name=EL9 Lab - BaseOS",
       "enabled=1",
       "",
       "[appstream]",
-      "name=Rocky Linux 9 - AppStream",
+      "name=EL9 Lab - AppStream",
       "enabled=1"
     ].join("\n")
   };
@@ -762,12 +886,11 @@ function refreshVirtualFiles(state) {
       "    Require all granted",
       "</Directory>"
     ].join("\n");
-    base["/var/www/html/index.html"] = [
-      "<!doctype html>",
-      "<html>",
-      "<head><title>Apache HTTP Server Test Page</title></head>",
-      "<body><h1>Apache HTTP Server Test Page</h1></body>",
-      "</html>"
+    base["/etc/httpd/conf.d/welcome.conf"] = [
+      "<LocationMatch \"^/+$\">",
+      "    ErrorDocument 403 /.noindex.html",
+      "</LocationMatch>",
+      "Alias /.noindex.html /usr/share/httpd/noindex/index.html"
     ].join("\n");
     base["/usr/lib/systemd/system/httpd.service"] = [
       "[Unit]",
@@ -820,7 +943,13 @@ function ensureDefaults(state) {
   state.runtime.services ||= {};
   state.runtime.nextPid ||= 2000;
   state.runtime.logIndex ||= 0;
-  state.runtime.cacheFresh = Boolean(state.runtime.cacheFresh);
+  state.runtime.dnfMetadata ||= {
+    status: "expired",
+    lastCheck: "",
+    syncCount: 0,
+    reposReachable: true
+  };
+  state.shell ||= { lastExitCode: 0 };
   state.runtime.network ||= {
     interface: "enp0s3",
     address: "192.168.56.20/24",
@@ -964,7 +1093,8 @@ function clone(value) {
 function helpText() {
   return [
     "このラボで使える主なコマンド:",
-    "  sudo dnf makecache",
+    "  dnf repolist",
+    "  dnf check-update / echo $?",
     "  dnf info httpd",
     "  sudo dnf install -y httpd",
     "  dnf list installed httpd",
@@ -972,7 +1102,7 @@ function helpText() {
     "  systemctl status|is-active|is-enabled httpd",
     "  sudo systemctl start|stop|restart|enable|disable httpd",
     "  journalctl -u httpd -n 20",
-    "  ss -lntp",
+    "  ss -lnt / sudo ss -lntp",
     "  curl http://localhost/",
     "  ip addr / ip route",
     "  ping -c 2 192.168.56.1",

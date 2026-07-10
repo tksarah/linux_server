@@ -3,14 +3,15 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>systemd / Apache 初級ラボ</title>
+    <title>EL9 Apache 初級ラボ</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body data-terminal-mode="embedded">
     <header class="topbar">
       <div>
-        <p class="eyebrow">Rocky / AlmaLinux 9 相当</p>
-        <h1>systemd / Apache 初級ラボ</h1>
+        <p class="eyebrow">EL9系の共通操作を再現した固定の仮想教材環境</p>
+        <h1>EL9 Apache 初級ラボ</h1>
       </div>
       <div class="topbar-actions">
         <button class="ghost-button" id="resetScenario" type="button">演習をリセット</button>
@@ -20,7 +21,7 @@
     <main class="app-shell">
       <aside class="exercise-rail" aria-label="演習一覧">
         <div class="rail-heading">
-          <span>演習</span>
+          <span>この演習のゴール</span>
           <strong id="progressText">0/0</strong>
         </div>
         <div class="progress-track" aria-hidden="true">
@@ -89,9 +90,9 @@
 
           <article class="panel tips-panel">
             <div class="panel-title">
-              <h3>コマンド候補</h3>
+              <h3>進め方</h3>
             </div>
-            <div id="commandTips" class="command-tips"></div>
+            <div id="learningSupport" class="learning-support"></div>
           </article>
         </section>
 
@@ -111,6 +112,7 @@
           </div>
           <div class="terminal-body">
             <div id="terminalOutput" class="terminal-output" aria-live="polite"></div>
+            <p class="terminal-help">ヒントのコマンドチップは入力のみ行います。Enterキーまたは「実行」で実行してください。</p>
             <form id="terminalForm" class="terminal-form">
               <span class="prompt">[student@web01 ~]$</span>
               <input id="terminalInput" type="text" autocomplete="off" spellcheck="false" aria-label="コマンド入力">
